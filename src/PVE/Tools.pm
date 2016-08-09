@@ -84,6 +84,9 @@ use constant {CLONE_NEWNS   => 0x00020000,
 use constant {O_PATH    => 0x00200000,
               O_TMPFILE => 0x00410000}; # This includes O_DIRECTORY
 
+use constant {RENAME_EXCHANGE => 0x002,
+              AT_FDCWD => -100};
+
 sub run_with_timeout {
     my ($timeout, $code, @param) = @_;
 
@@ -1441,6 +1444,11 @@ sub enter_systemd_scope {
     $reactor->run();
     $cleanup->(1);
     die "systemd job never completed\n" if !$done;
+}
+
+sub renameat2($$$$$) {
+    my ($olddirfd, $oldpath, $newdirfd, $newpath, $flags) = @_;
+    return syscall(316, $olddirfd, $oldpath, $newdirfd, $newpath, $flags);
 }
 
 1;
