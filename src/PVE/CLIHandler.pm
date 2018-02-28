@@ -118,7 +118,8 @@ sub generate_usage_str {
     $indent //= '';
 
     my $can_read_pass = $cli_handler_class->can('read_password');
-    my $can_str_param_fmap = $cli_handler_class->can('string_param_file_mapping');
+    my $can_map_params = $cli_handler_class->can('param_mapping') ||
+			 $cli_handler_class->can('string_param_file_mapping');
 
     my ($subcmd, $def) = resolve_cmd($cmd);
 
@@ -138,7 +139,7 @@ sub generate_usage_str {
 		    $str .= $indent;
 		    $str .= $class->usage_str($name, "$prefix $cmd", $arg_param,
 		                              $fixed_param, $format,
-		                              $can_read_pass, $can_str_param_fmap);
+		                              $can_read_pass, $can_map_params);
 		    $oldclass = $class;
 
 		} elsif (defined($def->{$cmd}->{alias}) && ($format eq 'asciidoc')) {
@@ -162,7 +163,7 @@ sub generate_usage_str {
 
 	    $str .= $indent;
 	    $str .= $class->usage_str($name, $prefix, $arg_param, $fixed_param, $format,
-	                              $can_read_pass, $can_str_param_fmap);
+	                              $can_read_pass, $can_map_params);
 	}
 	return $str;
     };
@@ -546,7 +547,8 @@ sub run_cli_handler {
     my $preparefunc = $params{prepare};
 
     my $pwcallback = $class->can('read_password');
-    my $stringfilemap = $class->can('string_param_file_mapping');
+    my $param_mapping = $cli_handler_class->can('param_mapping') ||
+			$cli_handler_class->can('string_param_file_mapping');
 
     $exename = &$get_exe_name($class);
 
@@ -556,9 +558,9 @@ sub run_cli_handler {
     $cmddef = ${"${class}::cmddef"};
 
     if (ref($cmddef) eq 'ARRAY') {
-	&$handle_simple_cmd(\@ARGV, $pwcallback, $preparefunc, $stringfilemap);
+	&$handle_simple_cmd(\@ARGV, $pwcallback, $preparefunc, $param_mapping);
     } else {
-	&$handle_cmd(\@ARGV, $pwcallback, $preparefunc, $stringfilemap);
+	&$handle_cmd(\@ARGV, $pwcallback, $preparefunc, $param_mapping);
     }
 
     exit 0;

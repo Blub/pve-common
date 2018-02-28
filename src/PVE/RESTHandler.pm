@@ -394,7 +394,7 @@ sub handle {
 # $format: 'asciidoc', 'short', 'long' or 'full'
 # $style: 'config', 'config-sub', 'arg' or 'fixed'
 my $get_property_description = sub {
-    my ($name, $style, $phash, $format, $hidepw, $fileparams) = @_;
+    my ($name, $style, $phash, $format, $hidepw, $mapped_params) = @_;
 
     my $res = '';
 
@@ -415,10 +415,15 @@ my $get_property_description = sub {
 	$type_text = '';
     }
 
-    if ($fileparams && $phash->{type} eq 'string') {
-	foreach my $elem (@$fileparams) {
+    if ($mapped_params && $phash->{type} eq 'string') {
+	foreach my $elem (@$mapped_params) {
+	    my $desc;
+	    if (ref($elem) eq 'ARRAY') {
+		($elem, undef, $desc) = @$elem;
+	    }
+	    $desc //= '<filepath>';
 	    if ($name eq $elem) {
-		$type_text = '<filepath>';
+		$type_text = $desc;
 		last;
 	    }
 	}
@@ -513,9 +518,9 @@ my $get_property_description = sub {
 #   'full'     ... text, include description
 #   'asciidoc' ... generate asciidoc for man pages (like 'full')
 # $hidepw      ... hide password option (use this if you provide a read passwork callback)
-# $stringfilemap ... mapping for string parameters to file path parameters
+# $param_xform_map ... mapping for string parameters to file path parameters
 sub usage_str {
-    my ($self, $name, $prefix, $arg_param, $fixed_param, $format, $hidepw, $stringfilemap) = @_;
+    my ($self, $name, $prefix, $arg_param, $fixed_param, $format, $hidepw, $param_xform_map) = @_;
 
     $format = 'long' if !$format;
 
@@ -572,7 +577,7 @@ sub usage_str {
 	    }
 	}
 
-	my $mapping = defined($stringfilemap) ? &$stringfilemap($name) : undef;
+	my $mapping = defined($param_xform_map) ? &$param_xform_map($name) : undef;
 	$opts .= &$get_property_description($base, 'arg', $prop->{$k}, $format,
 					    $hidepw, $mapping);
 
@@ -657,13 +662,18 @@ sub dump_properties {
     return $raw;
 }
 
-my $replace_file_names_with_contents = sub {
+my $replace_mapped_contents = sub {
     my ($param, $mapping) = @_;
 
     if ($mapping) {
 	foreach my $elem ( @$mapping ) {
-	    $param->{$elem} = PVE::Tools::file_get_contents($param->{$elem})
-		if defined($param->{$elem});
+	    my $mapfunc = sub { return PVE::Tools::file_get_contents($_[0]) };
+	    if (ref($elem) eq 'ARRAY') {
+		($elem, $mapfunc) = @$elem;
+	    }
+	    if (defined(my $value = $param->{$elem})) {
+		$param->{$elem} = $mapfunc->($value);
+	    }
 	}
     }
 
@@ -671,15 +681,15 @@ my $replace_file_names_with_contents = sub {
 };
 
 sub cli_handler {
-    my ($self, $prefix, $name, $args, $arg_param, $fixed_param, $pwcallback, $stringfilemap) = @_;
+    my ($self, $prefix, $name, $args, $arg_param, $fixed_param, $pwcallback, $param_xform_map) = @_;
 
     my $info = $self->map_method_by_name($name);
 
     my $res;
     eval {
 	my $param = PVE::JSONSchema::get_options($info->{parameters}, $args, $arg_param, $fixed_param, $pwcallback);
-	&$replace_file_names_with_contents($param, &$stringfilemap($name))
-	    if defined($stringfilemap);
+	&$replace_mapped_contents($param, &$param_xform_map($name))
+	    if defined($param_xform_map);
 	$res = $self->handle($info, $param);
     };
     if (my $err = $@) {
@@ -687,7 +697,7 @@ sub cli_handler {
 
 	die $err if !$ec || $ec ne "PVE::Exception" || !$err->is_param_exc();
 	
-	$err->{usage} = $self->usage_str($name, $prefix, $arg_param, $fixed_param, 'short', $pwcallback, $stringfilemap);
+	$err->{usage} = $self->usage_str($name, $prefix, $arg_param, $fixed_param, 'short', $pwcallback, $param_xform_map);
 
 	die $err;
     }
